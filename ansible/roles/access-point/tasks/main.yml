@@ -58,6 +58,12 @@
 
 # hostapd is fully independent of the uplink now - start it with the network,
 # never give up on restarts.
+- name: Create hostapd drop-in directory
+  file:
+    path: /etc/systemd/system/hostapd.service.d
+    state: directory
+    mode: "0755"
+
 - name: Harden hostapd (auto-restart)
   copy:
     dest: /etc/systemd/system/hostapd.service.d/raspirouter.conf
