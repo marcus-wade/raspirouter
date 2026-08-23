@@ -43,6 +43,9 @@ umask 077
   echo "    ssid=\"$SSID\""
   if [ "$OPEN" = "true" ]; then
     echo "    key_mgmt=NONE"
+  elif printf '%s' "$PASSWORD" | grep -qE '^[0-9a-fA-F]{64}$'; then
+    echo "    psk=$PASSWORD"
+    echo "    key_mgmt=WPA-PSK"
   else
     echo "    psk=\"$PASSWORD\""
     echo "    key_mgmt=WPA-PSK"
