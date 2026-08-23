@@ -1,0 +1,60 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Upgrade all packages
+  apt:
+    upgrade: dist
+
+- name: Install required packages
+  apt:
+    name:
+      - hostapd
+      - dnsmasq
+      - nftables
+      - wpasupplicant
+      - wireless-tools
+      - iw
+      - rfkill
+      - curl
+      - git
+      - vim
+      - python3
+      - python3-pip
+      # Intel AX210 (M.2 E-key WiFi 6) needs iwlwifi userspace firmware
+      - firmware-iwlwifi
+    state: present
+
+- name: Set timezone
+  command: "timedatectl set-timezone {{ timezone }}"
+  changed_when: false
+
+- name: Enable IP forwarding at boot
+  copy:
+    dest: /etc/sysctl.d/90-router.conf
+    content: |
+      net.ipv4.ip_forward=1
+      net.ipv6.conf.all.forwarding=1
+    mode: "0644"
+  register: tr_sysctl
+
+- name: Apply IP forwarding now
+  command: sysctl --system
+  when: tr_sysctl is changed
+  changed_when: true
+
+- name: Harden SSH — disable password auth
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PasswordAuthentication"
+    line: "PasswordAuthentication no"
+  notify: Restart SSH
+
+- name: Harden SSH — disable root login
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PermitRootLogin"
+    line: "PermitRootLogin no"
+  notify: Restart SSH

@@ -1,0 +1,73 @@
+#!/bin/bash
+# Bring up the campus WiFi uplink from /var/lib/travel-router/uplink.conf
+# (the source of truth). Runs at boot (travel-router-uplink.service) and on
+# every ansible apply.
+#
+# raspirouter uses TWO physical radios: wlan1 is a pure station (this script),
+# wlan0 hosts the AP independently. There is no shared channel to pin and no
+# firmware-wedge ordering to respect - if the uplink fails, the AP still comes
+# up and the webapp remains reachable.
+set -u
+
+UPLINK="{{ uplink_interface }}"
+CONF="/var/lib/travel-router/uplink.conf"
+WPA_CONF="/etc/wpa_supplicant/wpa_supplicant-${UPLINK}.conf"
+COUNTRY="{{ wifi_country | default('US') }}"
+UP_WAIT=40
+
+FREQ24="2412 2417 2422 2427 2432 2437 2442 2447 2452 2457 2462 2467 2472"
+FREQ5="5180 5200 5220 5240 5260 5280 5500 5520 5540 5560 5580 5600 5620 5640 5660 5680 5700 5745 5765 5785 5805 5825"
+
+# read uplink.conf: value = everything after the first '=' (no eval)
+getval() { grep -m1 "^$1=" "$CONF" 2>/dev/null | cut -d= -f2-; }
+SSID="$(getval SSID)"
+PASSWORD="$(getval PASSWORD)"
+OPEN="$(getval OPEN)"
+BAND="$(getval BAND)"
+[ -n "$BAND" ] || BAND=auto
+
+case "$BAND" in
+  24) FREQS="$FREQ24" ;;
+  5)  FREQS="$FREQ5" ;;
+  *)  FREQS="" ;;   # auto: no band restriction
+esac
+
+# generate wpa_supplicant.conf
+umask 077
+{
+  echo "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev"
+  echo "update_config=1"
+  echo "country=$COUNTRY"
+  echo
+  echo "network={"
+  echo "    ssid=\"$SSID\""
+  if [ "$OPEN" = "true" ]; then
+    echo "    key_mgmt=NONE"
+  else
+    echo "    psk=\"$PASSWORD\""
+    echo "    key_mgmt=WPA-PSK"
+  fi
+  echo "    scan_ssid=1"
+  [ -n "$FREQS" ] && echo "    freq_list=$FREQS"
+  echo "}"
+} > "$WPA_CONF"
+chmod 600 "$WPA_CONF"
+logger -t tr-uplink "wpa_supplicant.conf generated (SSID='$SSID' OPEN=$OPEN BAND=$BAND)"
+
+rfkill unblock wifi 2>/dev/null || true
+systemctl restart "wpa_supplicant@${UPLINK}.service" 2>/dev/null || true
+systemctl restart systemd-networkd 2>/dev/null || true
+
+# wait for association (best effort - the AP comes up regardless)
+state=""
+for _ in $(seq 1 "$UP_WAIT"); do
+  state="$(wpa_cli -i "$UPLINK" status 2>/dev/null | sed -n 's/^wpa_state=//p')"
+  [ "$state" = "COMPLETED" ] && break
+  sleep 1
+done
+if [ "$state" = "COMPLETED" ]; then
+  logger -t tr-uplink "uplink associated"
+else
+  logger -t tr-uplink "uplink NOT associated after ${UP_WAIT}s; AP/webapp still available"
+fi
+exit 0

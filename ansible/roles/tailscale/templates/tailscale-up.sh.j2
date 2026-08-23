@@ -1,0 +1,22 @@
+#!/bin/bash
+# Autentica o Tailscale (só a primeira vez). Best-effort: se o uplink do hotel
+# ainda não subiu, tenta várias vezes e desiste sem afetar o AP.
+# O exit node NÃO é definido aqui — quem controla isso é o `travel-router`
+# (modo secure/portal). Assim o modo portal consegue tirar o exit node sem briga.
+set -u
+
+logged_in() {
+  tailscale status --json 2>/dev/null | grep -q '"BackendState": "Running"'
+}
+
+for _ in $(seq 1 30); do
+  logged_in && exit 0
+  tailscale up \
+    --authkey="{{ tailscale_authkey }}" \
+    --hostname="{{ tailscale_hostname }}" \
+    --accept-routes && exit 0
+  sleep 10
+done
+
+# Não bloqueia nada se falhar — o AP e o SSH local continuam de pé.
+exit 0

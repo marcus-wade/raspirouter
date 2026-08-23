@@ -1,0 +1,20 @@
+# raspirouter AP - onboard radio wlan0, bridged into the LAN bridge so the
+# wired port (eth0) and WiFi clients share one subnet. Channel is FIXED:
+# with two physical radios there is no need to follow the uplink's channel,
+# and a fixed channel keeps hostapd stable across reboots.
+ctrl_interface=/var/run/hostapd
+interface={{ ap_interface }}
+bridge={{ lan_bridge }}
+driver=nl80211
+ssid={{ ap_ssid }}
+hw_mode={{ ap_hw_mode }}
+channel={{ ap_channel }}
+wmm_enabled=1
+macaddr_acl=0
+auth_algs=1
+ignore_broadcast_ssid=0
+wpa=2
+wpa_passphrase={{ ap_password }}
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+country_code={{ wifi_country | default('US') }}

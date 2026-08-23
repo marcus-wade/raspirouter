@@ -1,0 +1,42 @@
+---
+- name: Check if tailscale is already installed
+  command: which tailscale
+  register: tailscale_installed
+  changed_when: false
+  failed_when: false
+
+- name: Download and run Tailscale install script
+  shell: curl -fsSL https://tailscale.com/install.sh | sh
+  when: tailscale_installed.rc != 0
+
+- name: Enable and start tailscaled
+  systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+# The auth key lives in this root-only script, not in the unit file
+- name: Deploy tailscale-up script
+  template:
+    src: tailscale-up.sh.j2
+    dest: /usr/local/bin/tailscale-up.sh
+    mode: "0700"
+    owner: root
+    group: root
+  notify: Restart tailscale-up
+
+- name: Deploy tailscale-up service
+  template:
+    src: tailscale-up.service.j2
+    dest: /etc/systemd/system/tailscale-up.service
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart tailscale-up
+
+- name: Enable and start tailscale-up
+  systemd:
+    name: tailscale-up
+    enabled: true
+    state: started
+    daemon_reload: true

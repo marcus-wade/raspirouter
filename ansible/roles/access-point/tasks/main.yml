@@ -1,0 +1,116 @@
+---
+# Unmask hostapd (it ships masked on Raspberry Pi OS)
+- name: Unmask hostapd
+  systemd:
+    name: hostapd
+    masked: false
+
+# hostapd.conf: fixed channel/hw_mode. Two physical radios = the AP never needs
+# to follow the uplink's channel, so no runtime rewriting, no restarts.
+- name: Deploy hostapd config
+  template:
+    src: hostapd.conf.j2
+    dest: /etc/hostapd/hostapd.conf
+    mode: "0600"
+
+- name: Point hostapd to config file
+  lineinfile:
+    path: /etc/default/hostapd
+    regexp: "^#?DAEMON_CONF"
+    line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
+
+# LAN bridge: br0 carries the static AP IP and enslaves eth0.
+# wlan0 joins br0 via hostapd's bridge= directive (hostapd handles the
+# radio-side membership itself).
+- name: Deploy bridge netdev
+  template:
+    src: br0.netdev.j2
+    dest: "/etc/systemd/network/10-{{ lan_bridge }}.netdev"
+    mode: "0644"
+  notify: Restart systemd-networkd
+
+- name: Deploy bridge network (static IP)
+  template:
+    src: br0.network.j2
+    dest: "/etc/systemd/network/11-{{ lan_bridge }}.network"
+    mode: "0644"
+  notify: Restart systemd-networkd
+
+- name: Enslave the wired port in the bridge
+  copy:
+    dest: "/etc/systemd/network/21-{{ eth_interface }}.network"
+    content: |
+      [Match]
+      Name={{ eth_interface }}
+
+      [Network]
+      Bridge={{ lan_bridge }}
+    mode: "0644"
+  notify: Restart systemd-networkd
+
+# dnsmasq: DHCP + DNS for LAN clients (AP WiFi + wired port)
+- name: Deploy dnsmasq config for the LAN
+  template:
+    src: dnsmasq-lan.conf.j2
+    dest: /etc/dnsmasq.d/lan.conf
+    mode: "0644"
+  notify: Restart dnsmasq
+
+# hostapd is fully independent of the uplink now - start it with the network,
+# never give up on restarts.
+- name: Harden hostapd (auto-restart)
+  copy:
+    dest: /etc/systemd/system/hostapd.service.d/raspirouter.conf
+    content: |
+      [Unit]
+      After=network.target
+      StartLimitIntervalSec=0
+
+      [Service]
+      Restart=always
+      RestartSec=3
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start hostapd
+  systemd:
+    name: hostapd
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable and start dnsmasq
+  systemd:
+    name: dnsmasq
+    enabled: true
+    state: started
+
+# Watchdog: repairs br0 IP/hostapd/dnsmasq every minute. Only acts when
+# something is DOWN (starting a stopped hostapd is safe; restarting a healthy
+# one would needlessly kick clients off).
+- name: Deploy AP watchdog script
+  template:
+    src: ap-watchdog.sh.j2
+    dest: /usr/local/bin/ap-watchdog.sh
+    mode: "0755"
+
+- name: Deploy AP watchdog service
+  template:
+    src: ap-watchdog.service.j2
+    dest: /etc/systemd/system/ap-watchdog.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy AP watchdog timer
+  template:
+    src: ap-watchdog.timer.j2
+    dest: /etc/systemd/system/ap-watchdog.timer
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start AP watchdog timer
+  systemd:
+    name: ap-watchdog.timer
+    enabled: true
+    state: started
+    daemon_reload: true
