@@ -29,6 +29,13 @@ hotel_password: ""                # only used if hotel_open: false
 # ── System ───────────────────────────────────────────────────────────────────
 timezone: "America/New_York"
 
+# ── Tailscale (out-of-band management) — OPTIONAL ────────────────────────────
+# Reach the Pi from anywhere once it has any connectivity. Omit entirely to
+# skip the role. Key from https://login.tailscale.com/admin/settings/keys;
+# it lands in a root-only script, never in git.
+# tailscale_authkey: "tskey-auth-..."
+# tailscale_hostname: "raspirouter"
+
 # ── Optional (defaults live in inventory/group_vars/all/main.yml) ────────────
 # ap_channel: 6                   # AP channel ('a'+36+ for 5 GHz AP)
 # uplink_band: "auto"             # "24" | "5" | "auto"

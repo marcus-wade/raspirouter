@@ -49,12 +49,14 @@ independently of the uplink state.
 
 1. `rollback-guard` — installs rollback/deadman CLIs FIRST; opt-in auto-revert safety net
 2. `base` — packages (incl. firmware-iwlwifi), IP forwarding, SSH hardening, timezone
-3. `wifi-client` — takes wlan0/wlan1/eth0 away from NetworkManager; seeds
+3. `tailscale` — out-of-band management; must run BEFORE wifi-client (installer
+   needs internet while NM still owns the uplink); authkey in config.yml
+4. `wifi-client` — takes wlan0/wlan1/eth0 away from NetworkManager; seeds
    `/var/lib/travel-router/uplink.conf` (source of truth); uplink orchestrator service
-4. `access-point` — hostapd on wlan0 bridged into br0; systemd-networkd br0/eth0 configs;
+5. `access-point` — hostapd on wlan0 bridged into br0; systemd-networkd br0/eth0 configs;
    dnsmasq LAN DHCP/DNS; ap-watchdog timer (start-only repairs)
-5. `routing` — single permanent nftables ruleset (LAN→wlan1 NAT), `travel-router` CLI
-6. `webapp` — Flask app listening only on the bridge IP; scan/select SSID → writes
+6. `routing` — single permanent nftables ruleset (LAN→wlan1 NAT), `travel-router` CLI
+7. `webapp` — Flask app listening only on the bridge IP; scan/select SSID → writes
    uplink.conf → reboots
 
 ### Key runtime facts

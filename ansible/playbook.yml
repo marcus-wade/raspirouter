@@ -29,6 +29,12 @@
       tags: [rollback-guard]
     - role: base
       tags: [base]
+    # Before wifi-client: the installer pulls packages over the network,
+    # which must happen while NM still owns the uplink. Opt-in: set
+    # tailscale_authkey in config.yml, otherwise skipped entirely.
+    - role: tailscale
+      tags: [tailscale]
+      when: tailscale_authkey is defined and tailscale_authkey | length > 0
     - role: wifi-client
       tags: [wifi-client]
     - role: access-point
