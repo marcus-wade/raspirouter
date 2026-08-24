@@ -18,13 +18,21 @@ ap_ssid: "RaspiRouter"
 ap_password: "CHANGE_ME_strong_password"   # >= 8 chars
 
 # ── Campus WiFi (uplink) ─────────────────────────────────────────────────────
-# Wingate University residence network: WingateResnet joins WITHOUT a WiFi
-# password; each device then logs in through a captive web page. The Pi joins,
-# you complete the web login once from any device behind the Pi, and every
-# NATed device shares the session.
-hotel_ssid: "WingateResnet"
-hotel_open: true                  # true = open join (captive portal after)
-hotel_password: ""                # only used if hotel_open: false
+# Three auth modes, chosen by these fields:
+#   open network (captive portal):  hotel_open: true
+#   WPA-PSK (shared password):      hotel_open: false, hotel_password set
+#   WPA2-Enterprise (user account): hotel_identity set (PEAP/MSCHAPv2);
+#                                   hotel_password is the account password
+hotel_ssid: "WU-Users"
+hotel_open: false
+hotel_identity: ""                # username for enterprise networks; "" = PSK
+hotel_password: ""
+
+# Alternative uplinks, tried in order when the primary is out of range
+# (each entry: ssid, and optionally password / open / identity)
+# uplink_fallbacks:
+#   - { ssid: "WU-RESNET", password: "..." }
+#   - { ssid: "HomeWifi", password: "..." }
 
 # ── System ───────────────────────────────────────────────────────────────────
 timezone: "America/New_York"

@@ -62,7 +62,8 @@ independently of the uplink state.
 ### Key runtime facts
 
 - `/var/lib/travel-router/uplink.conf`: KEY=VALUE source of truth for the uplink
-  (SSID/PASSWORD/OPEN/BAND). Webapp owns it after first provisioning.
+ (SSID/PASSWORD/OPEN/IDENTITY/BAND + FALLBACKn_* alternatives; IDENTITY non-empty
+ = WPA2-Enterprise PEAP/MSCHAPv2). Webapp owns it after first provisioning.
 - Campus captive portal needs NO special mode: NAT'd devices can always reach it;
   any HTTP browse triggers the login page. One login shares the session for all
   devices behind the Pi's wireless MAC.

@@ -57,6 +57,8 @@
     <div id="connform" style="display:none;margin-top:12px">
       <label>Selected network</label>
       <input id="f-ssid" placeholder="SSID">
+      <label id="f-userlbl" style="display:none;margin-top:8px">Username</label>
+      <input id="f-user" style="display:none" autocapitalize="none" placeholder="Account username">
       <label id="f-passlbl" style="display:block;margin-top:8px">Password</label>
       <input id="f-pass" type="password" placeholder="WiFi password">
       <div class="btns" style="margin-top:12px">
@@ -116,7 +118,7 @@ async function scan(){
     const list = $('netlist'); list.innerHTML='';
     (d.networks||[]).forEach(n=>{
       const el=document.createElement('div'); el.className='net';
-      el.innerHTML = `<span class="name">${n.ssid}</span><span class="meta">${n.open?'🔓 open':'🔒'} · ${n.signal} dBm · ch ${n.channel||'?'}</span>`;
+      el.innerHTML = `<span class="name">${n.ssid}</span><span class="meta">${n.open?'🔓 open':n.eap?'👤 login':'🔒'} · ${n.signal} dBm · ch ${n.channel||'?'}</span>`;
       el.onclick=()=>selectNet(n);
       list.appendChild(el);
     });
@@ -129,15 +131,20 @@ function selectNet(n){
   $('f-ssid').value=n.ssid;
   $('f-pass').style.display = n.open?'none':'block';
   $('f-passlbl').style.display = n.open?'none':'block';
-  $('f-pass').value='';
+  $('f-user').style.display = n.eap?'block':'none';
+  $('f-userlbl').style.display = n.eap?'block':'none';
+  $('f-passlbl').textContent = n.eap?'Account password':'Password';
+  $('f-pass').placeholder = n.eap?'Account password':'WiFi password';
+  $('f-user').value=''; $('f-pass').value='';
   $('connform').scrollIntoView({behavior:'smooth'});
 }
 async function connectUplink(){
   const ssid=$('f-ssid').value.trim();
   const passEl=$('f-pass');
   const open = passEl.style.display==='none';
+  const identity = $('f-user').style.display==='none' ? '' : $('f-user').value.trim();
   toast('Saving '+ssid+'…');
-  const d = await api('/api/uplink',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid, open, password:passEl.value})});
+  const d = await api('/api/uplink',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid, open, password:passEl.value, identity})});
   if(d.ok){ $('connform').style.display='none'; toast('Rebooting to connect to '+ssid+' (~1 min)…'); }
   else { toast('Error: '+(d.error||'')); }
 }

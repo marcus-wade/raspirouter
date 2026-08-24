@@ -74,8 +74,13 @@ def write_uplink_conf(d):
         "SSID=%s" % d.get("SSID", ""),
         "PASSWORD=%s" % d.get("PASSWORD", ""),
         "OPEN=%s" % ("true" if str(d.get("OPEN")).lower() == "true" else "false"),
+        "IDENTITY=%s" % d.get("IDENTITY", ""),
         "BAND=%s" % (d.get("BAND") or "auto"),
     ]
+    # keep FALLBACKn_* entries (lower-priority alternative uplinks) intact
+    for k in sorted(d):
+        if k.startswith("FALLBACK"):
+            lines.append("%s=%s" % (k, d[k]))
     with open(UPLINK_CONF, "w") as f:
         f.write("\n".join(lines) + "\n")
     os.chmod(UPLINK_CONF, 0o600)
@@ -125,6 +130,7 @@ def api_scan():
         if not ssid:
             continue
         open_net = not ("WPA" in flags or "WEP" in flags)
+        eap_net = "EAP" in flags  # WPA2-Enterprise: needs username + password
         try:
             sig = int(signal)
         except ValueError:
@@ -132,7 +138,7 @@ def api_scan():
         cur = nets.get(ssid)
         if cur is None or sig > cur["signal"]:
             nets[ssid] = {"ssid": ssid, "signal": sig, "open": open_net,
-                          "channel": freq_to_channel(freq)}
+                          "eap": eap_net, "channel": freq_to_channel(freq)}
     result = sorted(nets.values(), key=lambda n: n["signal"], reverse=True)
     return jsonify(networks=result)
 
@@ -143,15 +149,20 @@ def api_uplink():
     ssid = (body.get("ssid") or "").strip()
     is_open = bool(body.get("open"))
     password = body.get("password") or ""
+    identity = (body.get("identity") or "").strip()
     if not ssid:
         return jsonify(ok=False, error="Empty SSID"), 400
-    if not is_open and len(password) < 8:
+    if identity:
+        if not password:
+            return jsonify(ok=False, error="Enterprise network needs the account password"), 400
+    elif not is_open and len(password) < 8:
         return jsonify(ok=False, error="WPA network password needs >= 8 characters"), 400
 
     cur = read_uplink_conf()
     cur["SSID"] = ssid
     cur["PASSWORD"] = "" if is_open else password
     cur["OPEN"] = "true" if is_open else "false"
+    cur["IDENTITY"] = identity
     cur.setdefault("BAND", "auto")
     try:
         write_uplink_conf(cur)
