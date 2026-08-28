@@ -1,0 +1,138 @@
+---
+# Unblock WiFi radio (rfkill may block it on first boot)
+- name: Unblock WiFi with rfkill
+  command: rfkill unblock wifi
+  changed_when: false
+
+# Safety net BEFORE taking radios away from NetworkManager: a dormant NM
+# profile with the uplink credentials. While the interfaces are unmanaged it
+# does nothing; on rollback NM resumes them and reconnects using it. Without
+# this, a rollback could leave the Pi orphaned with no credentials anywhere.
+- name: Deploy NM fallback profile for the uplink
+  template:
+    src: uplink-fallback.nmconnection.j2
+    dest: /etc/NetworkManager/system-connections/uplink-fallback.nmconnection
+    mode: "0600"
+    owner: root
+    group: root
+  notify: Reload NetworkManager
+
+# Keep NetworkManager off ALL router interfaces; they belong to
+# wpa_supplicant + systemd-networkd + hostapd from here on.
+- name: Keep NetworkManager away from wlan0/wlan1/eth0
+  copy:
+    dest: /etc/NetworkManager/conf.d/99-travel-router-unmanaged.conf
+    content: |
+      [keyfile]
+      unmanaged-devices=interface-name:{{ ap_interface }};interface-name:{{ uplink_interface }};interface-name:{{ eth_interface }}
+    mode: "0644"
+  notify: Reload NetworkManager
+
+# The distro-global wpa_supplicant.service conflicts with the per-interface one
+- name: Disable global wpa_supplicant service
+  systemd:
+    name: wpa_supplicant
+    enabled: false
+  failed_when: false
+
+# ── Source of truth for the uplink (SSID/password/band). BOOTSTRAP ONLY:
+#    seeded from config.yml on first provisioning; afterwards the webapp owns
+#    this file (writes it, then reboots). force: only `uplink_reset=true`
+#    re-seeds it from config.yml.
+- name: Travel-router state directory
+  file:
+    path: /var/lib/travel-router
+    state: directory
+    mode: "0755"
+
+- name: Seed uplink.conf (source of truth for the uplink)
+  template:
+    src: uplink.conf.j2
+    dest: /var/lib/travel-router/uplink.conf
+    mode: "0600"
+    force: "{{ uplink_reset | default(false) | bool }}"
+
+# ── AX210 stability: disable PCIe WiFi power saving (dropouts under load) ────
+- name: Disable iwlwifi power save
+  copy:
+    dest: /etc/modprobe.d/iwlwifi-raspirouter.conf
+    content: |
+      # raspirouter: prevent AX210 power-save dropouts while routing
+      options iwlwifi power_save=0
+    mode: "0644"
+
+# ── Orchestrator: brings the STA up from uplink.conf at boot and on apply.
+#    Two physical radios mean NO hostapd channel pinning is needed anymore —
+#    the AP on wlan0 is fully independent of whatever wlan1 does.
+- name: Deploy uplink orchestrator
+  template:
+    src: travel-router-uplink-up.sh.j2
+    dest: /usr/local/sbin/travel-router-uplink-up.sh
+    mode: "0755"
+
+- name: Deploy uplink orchestrator service
+  template:
+    src: travel-router-uplink.service.j2
+    dest: /etc/systemd/system/travel-router-uplink.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable the uplink orchestrator
+  systemd:
+    name: travel-router-uplink.service
+    enabled: true
+    daemon_reload: true
+
+# wpa_supplicant@wlan1: enabled, but the orchestrator does the actual
+# start/config-regeneration so an early boot start never races us.
+- name: Enable wpa_supplicant for the uplink radio
+  systemd:
+    name: "wpa_supplicant@{{ uplink_interface }}"
+    enabled: true
+
+# systemd-networkd: DHCP on the uplink interface for the campus IP
+- name: Deploy systemd-networkd config for the uplink
+  copy:
+    dest: "/etc/systemd/network/20-{{ uplink_interface }}.network"
+    content: |
+      [Match]
+      Name={{ uplink_interface }}
+
+      [Network]
+      DHCP=yes
+    mode: "0644"
+  notify: Restart systemd-networkd
+
+- name: Enable systemd-networkd
+  systemd:
+    name: systemd-networkd
+    enabled: true
+    state: started
+
+# ── Cutover of the apply = run the orchestrator unconditionally (same
+#    procedure as boot): drop all three NICs from NM runtime management,
+#    bring the STA up, wait for association/DHCP.
+- name: Apply pending handlers now (Reload NM etc.)
+  meta: flush_handlers
+
+- name: Ensure router NICs are out of NM at runtime
+  command: nmcli device set {{ item }} managed no
+  loop:
+    - "{{ ap_interface }}"
+    - "{{ uplink_interface }}"
+    - "{{ eth_interface }}"
+  changed_when: false
+  failed_when: false
+
+- name: Run the uplink orchestrator (STA up + DHCP)
+  command: /usr/local/sbin/travel-router-uplink-up.sh
+  changed_when: false
+
+- name: Checkpoint - wait for the uplink to get IPv4 (up to 90s)
+  command: ip -4 -br addr show {{ uplink_interface }}
+  register: tr_uplink_ip
+  until: tr_uplink_ip.stdout is search('\d+\.\d+\.\d+\.\d+')
+  retries: 30
+  delay: 3
+  changed_when: false
+  failed_when: false

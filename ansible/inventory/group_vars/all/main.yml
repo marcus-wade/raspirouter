@@ -1,0 +1,46 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# Generic project defaults. Personal values (SSIDs, passwords) go in config.yml
+# (gitignored, see config.example.yml) and override these via `-e @config.yml`.
+#
+# Hardware layout (raspirouter):
+#   wlan1  Intel AX210 on the PCIe M.2 E-key hat  -> campus WiFi client (uplink)
+#   wlan0  onboard Pi 5 radio                     -> RaspiRouter AP
+#   eth0   gigabit port (bridged into br0)        -> wired device(s)
+#   br0    bridge of {wlan0 AP, eth0}             -> one LAN, 192.168.88.1
+# Two PHYSICAL radios: no virtual interfaces, no channel pinning, the AP and
+# the uplink never fight over a radio. The AP can always come up even if the
+# uplink is down.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── Private AP + LAN bridge ──────────────────────────────────────────────────
+ap_ssid: "RaspiRouter"      # override in config.yml
+ap_interface: "wlan0"       # onboard radio hosts the AP directly
+lan_bridge: "br0"           # bridges ap_interface + eth_interface
+eth_interface: "eth0"       # wired LAN -> the computer
+ap_channel: 6               # fixed channel; change with ap_hw_mode together
+ap_hw_mode: "g"             # g = 2.4 GHz | a = 5 GHz (pair with channel 36+)
+ap_subnet: "192.168.88.0/24"
+ap_ip: "192.168.88.1"
+ap_dhcp_start: "192.168.88.100"
+ap_dhcp_end: "192.168.88.150"
+
+# ── Uplink (campus WiFi client) ──────────────────────────────────────────────
+uplink_interface: "wlan1"   # M.2 E-key Intel AX210 (PCIe)
+hotel_open: false           # override in config.yml (true for WingateResnet)
+uplink_band: "auto"         # 24 | 5 | auto — the AX210 handles both bands well
+
+# ── Web app served on the LAN ────────────────────────────────────────────────
+webapp_port: 80             # http://192.168.88.1
+wifi_country: "US"
+
+# ── Rollback / deadman switch ────────────────────────────────────────────────
+# Safety net when applying remotely: if true, the Pi arms a deadman that
+# reverts to the base state (all NICs back to NetworkManager, no AP/NAT)
+# unless the heartbeat is touched within deadman_timeout_sec.
+# Enable via `-e deadman_rollback=true`.
+deadman_rollback: false
+deadman_timeout_sec: 300    # 5 min without heartbeat -> rollback
+
+# ── System ───────────────────────────────────────────────────────────────────
+timezone: "UTC"             # override in config.yml

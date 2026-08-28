@@ -1,0 +1,35 @@
+#!/bin/bash
+# Revert ALL raspirouter config and hand the Pi back to its base state:
+#   - wlan0/wlan1/eth0 return to NetworkManager (reconnects to a known network
+#     via the dormant uplink-fallback NM profile)
+#   - no AP, no bridge, no nftables/NAT, no webapp
+# Invoked by the deadman (heartbeat expired) or manually:
+#   sudo travel-router-rollback
+set +e
+
+logger -t tr-rollback "ROLLBACK triggered - reverting to base state"
+
+# 1) Disarm the deadman first (prevents rollback loops)
+systemctl disable --now travel-router-deadman.timer 2>/dev/null
+rm -f /var/lib/travel-router/deadman-armed
+
+# 2) Stop and disable every raspirouter service
+for u in hostapd dnsmasq "wpa_supplicant@{{ uplink_interface }}" \
+         travel-router-uplink ap-watchdog.timer travel-router-web \
+         systemd-networkd; do
+  systemctl disable --now "$u" 2>/dev/null
+done
+
+# 3) Firewall: clear rules, disable at boot
+nft flush ruleset 2>/dev/null
+systemctl disable --now nftables 2>/dev/null
+
+# 4) Hand the interfaces back to NetworkManager
+rm -f /etc/NetworkManager/conf.d/99-travel-router-unmanaged.conf
+systemctl restart NetworkManager 2>/dev/null
+
+# 5) Clean reboot -> NM reconnects using the fallback profile
+logger -t tr-rollback "reverted; rebooting in 3s"
+sync
+sleep 3
+systemctl reboot

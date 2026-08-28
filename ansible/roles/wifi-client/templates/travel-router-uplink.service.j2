@@ -1,0 +1,15 @@
+[Unit]
+Description=Travel Router - campus WiFi uplink (STA on {{ uplink_interface }})
+After=network-pre.target
+Wants=network-pre.target
+Before=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=90
+ExecStart=/usr/local/sbin/travel-router-uplink-up.sh
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target

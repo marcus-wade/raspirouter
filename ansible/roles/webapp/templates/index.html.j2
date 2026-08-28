@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ ap_ssid | default('raspirouter') }} — Setup</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f4f5f7; --card:#fff; --fg:#1a1a1a; --muted:#666; --border:#e2e4e8; --accent:#2563eb; --ok:#16a34a; --warn:#d97706; --danger:#dc2626; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --card:#1a1d24; --fg:#e8eaed; --muted:#9aa0a8; --border:#2a2e37; --accent:#3b82f6; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); line-height:1.45; }
+  .wrap { max-width:560px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:8px 0 4px; }
+  .sub { color:var(--muted); font-size:.85rem; margin-bottom:16px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; }
+  .card h2 { font-size:.95rem; margin:0 0 12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .row { display:flex; justify-content:space-between; gap:12px; padding:4px 0; font-size:.92rem; }
+  .row .k { color:var(--muted); } .row .v { font-weight:600; text-align:right; word-break:break-word; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:.8rem; font-weight:600; }
+  .pill.ok { background:color-mix(in srgb,var(--ok) 18%,transparent); color:var(--ok); }
+  .pill.off { background:color-mix(in srgb,var(--danger) 18%,transparent); color:var(--danger); }
+  button { font:inherit; font-weight:600; border:0; border-radius:10px; padding:11px 14px; cursor:pointer; background:var(--accent); color:#fff; }
+  button.sec { background:transparent; border:1px solid var(--border); color:var(--fg); }
+  button.danger { background:var(--danger); }
+  button:disabled { opacity:.5; cursor:default; }
+  .btns { display:flex; gap:10px; flex-wrap:wrap; }
+  .btns > * { flex:1; min-width:120px; }
+  input { font:inherit; width:100%; padding:11px; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--fg); margin-top:8px; }
+  label { font-size:.85rem; color:var(--muted); }
+  .net { display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--border); border-radius:10px; margin-top:8px; cursor:pointer; }
+  .net:hover { border-color:var(--accent); }
+  .net .name { flex:1; font-weight:600; }
+  .net .meta { font-size:.78rem; color:var(--muted); }
+  .toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:10px 16px; border-radius:10px; font-size:.88rem; opacity:0; transition:opacity .2s; pointer-events:none; max-width:90%; }
+  .toast.show { opacity:.95; }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--muted); border-top-color:transparent; border-radius:50%; animation:s .7s linear infinite; vertical-align:-2px; }
+  @keyframes s { to { transform:rotate(360deg); } }
+  .hint { font-size:.8rem; color:var(--muted); margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📡 {{ ap_ssid | default('raspirouter') }}</h1>
+  <div class="sub">Setup — open <code>http://{{ ap_ip | default('192.168.88.1') }}</code> while connected to this network</div>
+
+  <div class="card">
+    <h2>Status <span id="st-refresh" style="float:right;font-weight:400;text-transform:none"></span></h2>
+    <div class="row"><span class="k">Campus WiFi (uplink)</span><span class="v" id="s-uplink">—</span></div>
+    <div class="row"><span class="k">Internet</span><span class="v" id="s-inet">—</span></div>
+    <div class="row"><span class="k">Devices on AP</span><span class="v" id="s-clients">—</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Connect to campus WiFi</h2>
+    <button class="sec" id="b-scan" onclick="scan()">🔍 Scan networks</button>
+    <div id="netlist"></div>
+    <div id="connform" style="display:none;margin-top:12px">
+      <label>Selected network</label>
+      <input id="f-ssid" placeholder="SSID">
+      <label id="f-userlbl" style="display:none;margin-top:8px">Username</label>
+      <input id="f-user" style="display:none" autocapitalize="none" placeholder="Account username">
+      <label id="f-passlbl" style="display:block;margin-top:8px">Password</label>
+      <input id="f-pass" type="password" placeholder="WiFi password">
+      <div class="btns" style="margin-top:12px">
+        <button onclick="connectUplink()">Connect &amp; reboot Pi</button>
+        <button class="sec" onclick="document.getElementById('connform').style.display='none'">Cancel</button>
+      </div>
+    </div>
+    <div class="hint">The Pi reboots (~1 min) to apply the new uplink. This setup network comes back
+      automatically — reconnect to it afterward.</div>
+  </div>
+
+  <div class="card">
+    <h2>Uplink band preference</h2>
+    <div class="row"><span class="k">Current</span><span class="v"><span id="s-band" class="pill">—</span></div>
+    <div class="btns" style="margin-top:8px">
+      <button class="sec" id="b-band-24" onclick="setBand('24')">2.4 GHz</button>
+      <button class="sec" id="b-band-5" onclick="setBand('5')">5 GHz</button>
+      <button class="sec" id="b-band-auto" onclick="setBand('auto')">Auto</button>
+    </div>
+    <div class="hint">Auto works well with the WiFi&nbsp;6 card. Changing the band reboots the Pi.</div>
+  </div>
+
+  <div class="card">
+    <h2>Maintenance</h2>
+    <div class="btns">
+      <button class="sec" onclick="doReboot()">↻ Reboot Pi</button>
+      <button class="danger" onclick="doRollback()">⚠ Factory rollback</button>
+    </div>
+    <div class="hint">Rollback removes the router config and hands all network interfaces back to NetworkManager.</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),3000); }
+async function api(path, opts){ const r = await fetch(path, opts); return r.json(); }
+
+async function refresh(){
+  try{
+    const d = await api('/api/status');
+    $('s-uplink').innerHTML = d.uplink_ssid ? `${d.uplink_ssid} <span class="meta">(ch ${d.uplink_channel||'?'} , ${d.uplink_state||''})</span>` : '<span class="pill off">disconnected</span>';
+    $('s-inet').innerHTML = d.internet ? '<span class="pill ok">online</span>' : '<span class="pill off">offline</span>';
+    $('s-clients').textContent = d.ap_clients;
+    const band = d.band||'auto';
+    $('s-band').textContent = band==='24'?'2.4 GHz':band==='5'?'5 GHz':'Auto';
+    ['24','5','auto'].forEach(b=>{ const el=$('b-band-'+b); if(el) el.className = band===b ? '' : 'sec'; });
+    $('st-refresh').textContent='';
+  }catch(e){ $('st-refresh').textContent='(no connection)'; }
+}
+setInterval(refresh, 5000); refresh();
+
+async function scan(){
+  const b=$('b-scan'); b.disabled=true; b.innerHTML='<span class="spin"></span> Scanning…';
+  try{
+    const d = await api('/api/scan');
+    const list = $('netlist'); list.innerHTML='';
+    (d.networks||[]).forEach(n=>{
+      const el=document.createElement('div'); el.className='net';
+      el.innerHTML = `<span class="name">${n.ssid}</span><span class="meta">${n.open?'🔓 open':n.eap?'👤 login':'🔒'} · ${n.signal} dBm · ch ${n.channel||'?'}</span>`;
+      el.onclick=()=>selectNet(n);
+      list.appendChild(el);
+    });
+    if(!(d.networks||[]).length) list.innerHTML='<div class="hint">No networks found.</div>';
+  }catch(e){ toast('Scan failed'); }
+  b.disabled=false; b.textContent='🔍 Scan networks';
+}
+function selectNet(n){
+  $('connform').style.display='block';
+  $('f-ssid').value=n.ssid;
+  $('f-pass').style.display = n.open?'none':'block';
+  $('f-passlbl').style.display = n.open?'none':'block';
+  $('f-user').style.display = n.eap?'block':'none';
+  $('f-userlbl').style.display = n.eap?'block':'none';
+  $('f-passlbl').textContent = n.eap?'Account password':'Password';
+  $('f-pass').placeholder = n.eap?'Account password':'WiFi password';
+  $('f-user').value=''; $('f-pass').value='';
+  $('connform').scrollIntoView({behavior:'smooth'});
+}
+async function connectUplink(){
+  const ssid=$('f-ssid').value.trim();
+  const passEl=$('f-pass');
+  const open = passEl.style.display==='none';
+  const identity = $('f-user').style.display==='none' ? '' : $('f-user').value.trim();
+  toast('Saving '+ssid+'…');
+  const d = await api('/api/uplink',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid, open, password:passEl.value, identity})});
+  if(d.ok){ $('connform').style.display='none'; toast('Rebooting to connect to '+ssid+' (~1 min)…'); }
+  else { toast('Error: '+(d.error||'')); }
+}
+async function setBand(b){
+  const label = b==='24'?'2.4 GHz':b==='5'?'5 GHz':'Auto';
+  if(!confirm('Change uplink band to '+label+'? The Pi reboots (~1 min).'))return;
+  const d = await api('/api/band',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({band:b})});
+  toast(d.ok ? 'Band '+label+' — rebooting…' : 'Error: '+(d.error||''));
+}
+async function doReboot(){ if(!confirm('Reboot the Pi? You lose the connection for ~1 min.'))return; await api('/api/reboot',{method:'POST'}); toast('Rebooting…'); }
+async function doRollback(){ if(!confirm('Roll back to base state? Router config will be removed and the Pi reboots.'))return; await api('/api/rollback',{method:'POST'}); toast('Rolling back…'); }
+</script>
+</body>
+</html>

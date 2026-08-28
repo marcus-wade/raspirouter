@@ -1,0 +1,22 @@
+# Uplink do travel-router — FONTE DA VERDADE (persiste entre reboots).
+# Editado pelo webapp (escolher rede / banda) que grava aqui e reinicia o Pi.
+# Semeado do config.yml só na 1ª provisão (bootstrap); depois quem manda é este
+# arquivo. Formato KEY=VALUE, um por linha (o valor é tudo após o 1º '=').
+#   SSID      nome da rede do campus/hotel
+#   PASSWORD  senha (PSK, ou senha da conta se IDENTITY estiver definido)
+#   OPEN      true = rede aberta (captive portal) / false = protegida
+#   IDENTITY  usuário para WPA2-Enterprise (PEAP/MSCHAPv2); vazio = WPA-PSK
+#   BAND      24 = só 2.4GHz | 5 = só 5GHz | auto = ambas
+#   FALLBACKn_SSID/PASSWORD/OPEN/IDENTITY  redes alternativas (prioridade menor);
+#     o wpa_supplicant conecta na rede de maior prioridade que estiver no ar.
+SSID={{ hotel_ssid }}
+PASSWORD={{ hotel_password | default('') }}
+OPEN={{ 'true' if (hotel_open | default(false) | bool) else 'false' }}
+IDENTITY={{ hotel_identity | default('') }}
+BAND={{ uplink_band | default('24') }}
+{% for fb in uplink_fallbacks | default([]) %}
+FALLBACK{{ loop.index }}_SSID={{ fb.ssid }}
+FALLBACK{{ loop.index }}_PASSWORD={{ fb.password | default('') }}
+FALLBACK{{ loop.index }}_OPEN={{ 'true' if (fb.open | default(false) | bool) else 'false' }}
+FALLBACK{{ loop.index }}_IDENTITY={{ fb.identity | default('') }}
+{% endfor %}

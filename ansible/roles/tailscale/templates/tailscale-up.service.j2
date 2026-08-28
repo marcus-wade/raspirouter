@@ -1,0 +1,12 @@
+[Unit]
+Description=Tailscale node authentication and exit-node config
+After=tailscaled.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/tailscale-up.sh
+
+[Install]
+WantedBy=multi-user.target

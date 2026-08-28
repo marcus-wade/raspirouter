@@ -1,0 +1,50 @@
+#!/usr/sbin/nft -f
+# raspirouter - single permanent ruleset.
+# LAN clients (AP wifi + wired port on {{ lan_bridge }}) are NATed out the
+# campus WiFi uplink ({{ uplink_interface }}). Routing is always direct:
+# the Wingate captive portal is reachable through NAT from any LAN device,
+# so each device can (re)do its web login without mode switches.
+
+flush ruleset
+
+table inet filter {
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        ct state established,related accept
+        iifname "lo" accept
+
+        # SSH from LAN clients and the uplink side
+        iifname { "{{ lan_bridge }}", "{{ uplink_interface }}" } tcp dport 22 accept
+
+        # DHCP/DNS for LAN clients
+        iifname "{{ lan_bridge }}" udp dport 67 accept
+        iifname "{{ lan_bridge }}" tcp dport 53 accept
+        iifname "{{ lan_bridge }}" udp dport 53 accept
+
+        # Config web app (http://{{ ap_ip }})
+        iifname "{{ lan_bridge }}" tcp dport {{ webapp_port }} accept
+
+        ip protocol icmp accept
+        ip6 nexthdr icmpv6 accept
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+
+        # LAN -> campus uplink (and replies back)
+        iifname "{{ lan_bridge }}" oifname "{{ uplink_interface }}" accept
+        ct state established,related accept
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+    }
+}
+
+table ip nat {
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        oifname "{{ uplink_interface }}" masquerade
+    }
+}

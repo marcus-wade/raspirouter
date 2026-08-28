@@ -1,0 +1,26 @@
+---
+# IP forwarding (file also written by base; ensure it is live now)
+- name: Apply IP forwarding
+  command: sysctl -w net.ipv4.ip_forward=1
+  changed_when: true
+
+# Single permanent ruleset: NAT LAN (bridge) out the campus uplink.
+- name: Deploy nftables config
+  template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    mode: "0644"
+  notify: Reload nftables
+
+- name: Enable and start nftables
+  systemd:
+    name: nftables
+    enabled: true
+    state: started
+
+# ── raspirouter CLI (status / reconnect) ──────────────────────────────────────
+- name: Deploy travel-router CLI
+  template:
+    src: travel-router.sh.j2
+    dest: /usr/local/bin/travel-router
+    mode: "0755"

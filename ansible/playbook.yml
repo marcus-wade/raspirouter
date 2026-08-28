@@ -1,0 +1,67 @@
+---
+- name: RPi5 campus WiFi extender (raspirouter)
+  hosts: rpi5
+  gather_facts: true
+
+  # All environment-specific values come from config.yml (gitignored):
+  #   ansible-playbook playbook.yml -e @config.yml
+  # See config.example.yml.
+
+  pre_tasks:
+    - name: Validate config.yml was loaded (required vars)
+      assert:
+        that:
+          - ap_password is defined and ap_password | length >= 8
+          - hotel_ssid is defined and hotel_ssid | length > 0
+          - hotel_open or (hotel_password | default('') | length > 0)
+        fail_msg: >-
+          Incomplete config. Run with `-e @config.yml` and fill in the required
+          fields (see config.example.yml): ap_password (>=8), hotel_ssid and,
+          if hotel_open=false, hotel_password.
+        quiet: true
+      tags: [always]
+
+  roles:
+    # FIRST: installs rollback CLIs and (if deadman_rollback=true) arms the
+    # deadman switch BEFORE any networking changes. If the playbook dies
+    # halfway (or you lose access), the deadman reverts to the base state.
+    - role: rollback-guard
+      tags: [rollback-guard]
+    - role: base
+      tags: [base]
+    # Before wifi-client: the installer pulls packages over the network,
+    # which must happen while NM still owns the uplink. Opt-in: set
+    # tailscale_authkey in config.yml, otherwise skipped entirely.
+    - role: tailscale
+      tags: [tailscale]
+      when: tailscale_authkey is defined and tailscale_authkey | length > 0
+    - role: wifi-client
+      tags: [wifi-client]
+    - role: access-point
+      tags: [access-point]
+    - role: routing
+      tags: [routing]
+    - role: webapp
+      tags: [webapp]
+
+  post_tasks:
+    # AP-first verification: if the AP is not up at the end of the apply,
+    # fail on purpose — with the deadman armed this becomes an automatic
+    # rollback instead of an unreachable Pi.
+    - name: Validate the AP is on air at the end of the apply
+      block:
+        - name: hostapd active?
+          command: systemctl is-active hostapd
+          register: tr_hostapd_state
+          changed_when: false
+
+        - name: "{{ lan_bridge }} carrying the AP IP?"
+          command: ip -br addr show {{ lan_bridge }}
+          register: tr_br_addr
+          changed_when: false
+          failed_when: ap_ip not in tr_br_addr.stdout
+
+        - name: AP OK
+          debug:
+            msg: "AP on air: hostapd={{ tr_hostapd_state.stdout }}, {{ lan_bridge }}={{ ap_ip }} ({{ ap_interface }} + {{ eth_interface }})"
+      tags: [always]
